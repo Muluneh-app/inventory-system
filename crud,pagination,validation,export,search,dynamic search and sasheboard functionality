@@ -1,0 +1,1422 @@
+CODE.GS
+
+function doGet() {
+  return HtmlService
+    .createTemplateFromFile("index")
+    .evaluate()
+    .setTitle("Inventory CRUD System");
+}
+
+function include(filename) {
+  return HtmlService
+    .createHtmlOutputFromFile(filename)
+    .getContent();
+}
+
+function getSheet() {
+  return SpreadsheetApp
+    .openById(sheet_ID)
+    .getSheetByName("data");
+}
+
+// GENERATE PRODUCT ID
+function generateProductId() {
+
+  const sheet = getSheet();
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return "PROD-0001";
+  }
+
+  const lastId =
+    sheet.getRange(lastRow, 1).getValue();
+
+  const number =
+    parseInt(lastId.replace("PROD-", "")) + 1;
+
+  return "PROD-" +
+    String(number).padStart(4, "0");
+}
+
+// CREATE
+function registerProduct(data) {
+
+  const sheet = getSheet();
+
+  const productId =
+    generateProductId();
+
+  sheet.appendRow([
+    productId,
+    data.name,
+    data.quantity,
+    data.price
+  ]);
+
+  return "Product saved successfully!";
+}
+
+// READ
+function getData() {
+
+  const sheet = getSheet();
+
+  return sheet
+    .getDataRange()
+    .getValues();
+}
+
+// DELETE
+function deleteProduct(id) {
+
+  const sheet = getSheet();
+
+  const data =
+    sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+
+    if (data[i][0] == id) {
+
+      sheet.deleteRow(i + 1);
+
+      return "Product deleted!";
+    }
+  }
+
+  return "Product not found!";
+}
+
+// UPDATE
+function updateProduct(data) {
+
+  const sheet = getSheet();
+
+  const values =
+    sheet.getDataRange().getValues();
+
+  for (let i = 1; i < values.length; i++) {
+
+    if (values[i][0] == data.id) {
+
+      sheet.getRange(i + 1, 2)
+        .setValue(data.name);
+
+      sheet.getRange(i + 1, 3)
+        .setValue(data.quantity);
+
+      sheet.getRange(i + 1, 4)
+        .setValue(data.price);
+
+      return "Product updated!";
+    }
+  }
+
+  return "Update failed!";
+}
+
+
+DATABASE.GS
+
+
+
+const sheet_ID="SHEET_ID";
+function getSheet() {
+  return SpreadsheetApp.openById(sheet_ID).getSheetByName("data");
+ 
+}
+
+
+eXPORT.HTML
+
+<script>
+
+  // =========================================
+  // EXPORT EXCEL
+  // =========================================
+  function exportExcel() {
+
+    google.script.run
+      .withSuccessHandler((data) => {
+
+        const headers = data[0];
+
+        const rows = data.slice(1);
+
+        const exportData = rows.map(row => ({
+          ID: row[0],
+          Name: row[1],
+          Quantity: row[2],
+          Price: row[3]
+        }));
+
+        const worksheet =
+          XLSX.utils.json_to_sheet(exportData);
+
+        const workbook =
+          XLSX.utils.book_new();
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          worksheet,
+          "Products"
+        );
+
+        XLSX.writeFile(
+          workbook,
+          "Inventory_Data.xlsx"
+        );
+
+      })
+      .getData();
+  }
+
+  // =========================================
+  // EXPORT PDF
+  // =========================================
+  function exportPDF() {
+
+    google.script.run
+      .withSuccessHandler((data) => {
+
+        const rows = data.slice(1);
+
+        const body = rows.map(row => ([
+          row[0],
+          row[1],
+          row[2],
+          "$" + row[3]
+        ]));
+
+        const { jsPDF } = window.jspdf;
+
+        const doc = new jsPDF();
+
+        // TITLE
+        doc.setFontSize(18);
+
+        doc.text(
+          "Inventory Management Report",
+          14,
+          20
+        );
+
+        // DATE
+        doc.setFontSize(10);
+
+        doc.text(
+          "Generated: " + new Date().toLocaleString(),
+          14,
+          28
+        );
+
+        // TABLE
+        doc.autoTable({
+          startY: 35,
+
+          head: [[
+            "ID",
+            "Name",
+            "Quantity",
+            "Price"
+          ]],
+
+          body: body,
+
+          theme: "grid",
+
+          headStyles: {
+            fillColor: [30, 41, 59]
+          },
+
+          styles: {
+            fontSize: 10,
+            cellPadding: 3
+          }
+        });
+
+        doc.save("Inventory_Report.pdf");
+
+      })
+      .getData();
+  }
+
+</script>
+
+
+fORMcONFIG
+
+
+<script>
+
+/* =====================================================
+   GLOBAL VARIABLES
+===================================================== */
+
+let editRowId = "";
+
+let currentPage = 1;
+
+const rowsPerPage = 5;
+
+let tableData = [];
+
+/* =====================================================
+   FORM CONFIG
+===================================================== */
+
+const formFields = [
+
+  {
+    label: "Product Name",
+    type: "text",
+    id: "name",
+    placeholder: "Enter product name"
+  },
+
+  {
+    label: "Quantity",
+    type: "number",
+    id: "quantity",
+    placeholder: "Enter quantity"
+  },
+
+  {
+    label: "Price",
+    type: "number",
+    id: "price",
+    placeholder: "Enter price"
+  }
+
+];
+
+
+/* =====================================================
+   CREATE FIELD
+===================================================== */
+
+function createField(field) {
+
+  return `
+
+    <div>
+
+      <label
+        class="
+          block
+          text-sm
+          font-semibold
+          text-slate-700
+          mb-2
+        "
+      >
+        ${field.label}
+      </label>
+
+      <input
+        type="${field.type}"
+        id="${field.id}"
+        placeholder="${field.placeholder}"
+
+        oninput="
+          FormValidator.validateField('${field.id}')
+        "
+
+        class="
+          w-full
+          p-3
+          rounded-xl
+          border
+          border-slate-300
+          outline-none
+          focus:ring-4
+          focus:ring-blue-200
+          focus:border-blue-500
+          transition
+        "
+      >
+
+      <p
+        id="${field.id}-error"
+        class="
+          text-red-600
+          text-sm
+          mt-1
+        "
+      ></p>
+
+    </div>
+
+  `;
+
+}
+
+/* =====================================================
+   RENDER FORM
+===================================================== */
+
+function renderForm() {
+
+  const form =
+    document.getElementById("form");
+
+  form.innerHTML =
+
+    formFields.map(field =>
+      createField(field)
+    ).join("")
+
+    +
+
+    `
+
+    <button
+      type="submit"
+      class="
+        w-full
+        bg-blue-600
+        hover:bg-blue-700
+        text-white
+        font-semibold
+        py-3
+        rounded-xl
+        shadow-lg
+        transition
+      "
+    >
+      Save Product
+    </button>
+
+    <p
+      id="msg"
+      class="
+        text-center
+        text-sm
+        font-medium
+      "
+    ></p>
+
+  `;
+
+}
+
+/* =====================================================
+   SUBMIT DATA
+===================================================== */
+
+function submitData(event) {
+
+  event.preventDefault();
+
+  /* =========================
+     VALIDATE FORM
+  ========================= */
+
+  if (!FormValidator.validateForm()) {
+
+    document.getElementById("msg").innerText =
+      "Please fix validation errors";
+
+    document.getElementById("msg").className =
+      "text-red-600 text-sm text-center";
+
+    return;
+
+  }
+
+  /* =========================
+     FORM DATA
+  ========================= */
+
+  const data = {
+
+    id: editRowId,
+
+    name:
+      document.getElementById("name").value,
+
+    quantity:
+      document.getElementById("quantity").value,
+
+    price:
+      document.getElementById("price").value
+
+  };
+
+  /* =========================
+     LOADING MESSAGE
+  ========================= */
+
+  document.getElementById("msg").innerText =
+    "Saving...";
+
+  document.getElementById("msg").className =
+    "text-blue-600 text-sm text-center";
+
+  /* =========================
+     UPDATE
+  ========================= */
+
+  if (editRowId) {
+
+    google.script.run
+
+      .withSuccessHandler(function(response) {
+
+        document.getElementById("msg").innerText =
+          response;
+
+        document.getElementById("msg").className =
+          "text-green-600 text-sm text-center";
+
+        document.getElementById("form").reset();
+
+        editRowId = "";
+
+        loadData();
+
+      })
+
+      .withFailureHandler(function(error) {
+
+        document.getElementById("msg").innerText =
+          error.message;
+
+      })
+
+      .updateProduct(data);
+
+  }
+
+  /* =========================
+     SAVE
+  ========================= */
+
+  else {
+
+    google.script.run
+
+      .withSuccessHandler(function(response) {
+
+        document.getElementById("msg").innerText =
+          response;
+
+        document.getElementById("msg").className =
+          "text-green-600 text-sm text-center";
+
+        document.getElementById("form").reset();
+
+        loadData();
+
+      })
+
+      .withFailureHandler(function(error) {
+
+        document.getElementById("msg").innerText =
+          error.message;
+
+      })
+
+      .registerProduct(data);
+
+  }
+
+}
+
+/* =====================================================
+   LOAD DATA
+===================================================== */
+
+function loadData() {
+
+  google.script.run
+
+    .withSuccessHandler(function(data) {
+
+      if (!data || data.length <= 1) {
+
+        renderRows([]);
+
+        return;
+
+      }
+
+      tableData = data.slice(1);
+
+      currentPage = 1;
+
+      updateStats();
+
+      displayTable();
+
+    })
+
+    .getData();
+
+}
+
+/* =====================================================
+   PAGE LOAD
+===================================================== */
+
+window.onload = function() {
+
+  renderForm();
+
+  loadData();
+
+};
+
+</script>
+
+INDEX.HTML
+
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <base target="_top">
+
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>
+    Inventory CRUD System
+  </title>
+
+   <?!= include("Styles"); ?> 
+   <!-- <link rel="stylesheet" href="Styles.css"> -->
+
+</head>
+
+<body class="bg-slate-200 min-h-screen p-6">
+
+  <!-- MAIN -->
+  <div class="max-w-7xl mx-auto">
+
+    <!-- HEADER -->
+    <div class="mb-8">
+
+      <h1 class="text-4xl font-bold text-slate-800">
+        Inventory Management System
+      </h1>
+
+    </div>
+
+    <!-- GRID -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- FORM -->
+      <div class="bg-white rounded-3xl shadow-xl p-6 h-fit">
+
+        <div class="mb-6">
+
+          <h2 class="text-2xl font-bold text-slate-800">
+            Product Form
+          </h2>
+
+          <p class="text-slate-500 text-sm mt-1">
+            Add or update products
+          </p>
+
+        </div>
+
+        <form
+          id="form"
+          class="space-y-5"
+          onsubmit="submitData(event)"
+        ></form>
+
+      </div>
+
+      <!-- TABLE -->
+      <div class="lg:col-span-2 bg-white rounded-3xl shadow-xl p-6 overflow-hidden">
+
+        <!-- TABLE HEADER -->
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+
+          <div>
+
+            <h2 class="text-2xl font-bold text-slate-800">
+              Product List
+            </h2>
+
+            <p class="text-slate-500 text-sm mt-1">
+              Manage inventory products
+            </p>
+
+          </div>
+
+        </div>
+
+        <!-- STATS -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+
+          <!-- TOTAL PRODUCTS -->
+          <div class="bg-blue-50 border border-blue-100 rounded-2xl p-5">
+
+            <p class="text-sm font-semibold text-blue-600">
+              Total Products
+            </p>
+
+            <h2
+              id="totalProducts"
+              class="text-3xl font-bold text-blue-800 mt-2"
+            >
+              0
+            </h2>
+
+          </div>
+
+          <!-- TOTAL QUANTITY -->
+          <div class="bg-green-50 border border-green-100 rounded-2xl p-5">
+
+            <p class="text-sm font-semibold text-green-600">
+              Total Quantity
+            </p>
+
+            <h2
+              id="totalQuantity"
+              class="text-3xl font-bold text-green-800 mt-2"
+            >
+              0
+            </h2>
+
+          </div>
+
+          <!-- TOTAL PRICE -->
+          <div class="bg-orange-50 border border-orange-100 rounded-2xl p-5">
+
+            <p class="text-sm font-semibold text-orange-600">
+              Total Price
+            </p>
+
+            <h2
+              id="totalPrice"
+              class="text-3xl font-bold text-orange-800 mt-2"
+            >
+              $0
+            </h2>
+
+          </div>
+
+        </div>
+
+        <!-- SEARCH -->
+        <div class="relative mb-6">
+
+          
+
+          <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="w-5 h-5 text-slate-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+
+            </svg>
+
+          </div>
+
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Search products..."
+            onkeyup="searchTable()"
+            class="
+              w-full
+              pl-12
+              pr-4
+              py-3
+              rounded-2xl
+              border
+              border-slate-300
+              bg-slate-50
+              outline-none
+              focus:ring-4
+              focus:ring-blue-200
+              focus:border-blue-500
+            "
+          >
+
+        </div>
+<!-- EXPORT BUTTONS -->
+<div class="flex flex-wrap gap-3 mb-6">
+
+  <button
+    onclick="exportExcel()"
+    class="
+      bg-green-600
+      hover:bg-green-700
+      text-white
+      px-5
+      py-3
+      rounded-2xl
+      font-semibold
+      shadow
+      transition
+    "
+  >
+    Export Excel
+  </button>
+
+  <button
+    onclick="exportPDF()"
+    class="
+      bg-red-600
+      hover:bg-red-700
+      text-white
+      px-5
+      py-3
+      rounded-2xl
+      font-semibold
+      shadow
+      transition
+    "
+  >
+    Export PDF
+  </button>
+
+</div>
+
+<!-- TABLE -->
+<div class="overflow-x-auto rounded-2xl border border-slate-200">
+
+  <table class="w-full text-sm">
+
+    <thead class="bg-slate-800 text-white">
+
+      <tr>
+
+        <th class="p-4 text-left">
+          ID
+        </th>
+
+        <th class="p-4 text-left">
+          Name
+        </th>
+
+        <th class="p-4 text-left">
+          Qty
+        </th>
+
+        <th class="p-4 text-left">
+          Price
+        </th>
+
+        <th class="p-4 text-left">
+          Actions
+        </th>
+
+      </tr>
+
+    </thead>
+
+    <tbody
+      id="tableBody"
+      class="divide-y divide-slate-200 bg-white"
+    ></tbody>
+
+  </table>
+
+</div>
+
+        <!-- PAGINATION -->
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4 mt-6">
+
+          <div
+            id="pageInfo"
+            class="
+              text-sm
+              font-semibold
+              text-slate-700
+              bg-slate-100
+              px-4
+              py-2
+              rounded-xl
+            "
+          >
+            Page 1 of 1
+          </div>
+
+          <div class="flex items-center gap-3">
+
+            <!-- PREV -->
+            <button
+              type="button"
+              id="prevBtn"
+              onclick="prevPage()"
+              class="
+                bg-slate-700
+                hover:bg-slate-800
+                text-white
+                px-5
+                py-2
+                rounded-xl
+                transition
+                disabled:opacity-50
+                disabled:cursor-not-allowed
+              "
+            >
+              ← Previous
+            </button>
+
+            <!-- NEXT -->
+            <button
+              type="button"
+              id="nextBtn"
+              onclick="nextPage()"
+              class="
+                bg-slate-700
+                hover:bg-slate-800
+                text-white
+                px-5
+                py-2
+                rounded-xl
+                transition
+                disabled:opacity-50
+                disabled:cursor-not-allowed
+              "
+            >
+              Next →
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+  <?!= include("Validator"); ?>
+  <?!= include("Pagination"); ?>
+  <?!= include("Stats"); ?>
+  <?!= include("Search"); ?>
+  <?!= include("Table"); ?>
+  <?!= include("FormConfig"); ?>
+  <?!= include("Export"); ?>
+ <!-- XLSX -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<!-- jsPDF -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<!-- AutoTable -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable"></script>
+
+
+</body>
+
+</html>
+
+
+
+PAGINATION
+
+
+<script>
+/* =====================================================
+       PAGINATION
+    ===================================================== */
+  
+    function updatePagination() {
+
+      const totalPages =
+        Math.ceil(
+          tableData.length / rowsPerPage
+        ) || 1;
+
+      document.getElementById("pageInfo").innerText =
+        `Page ${currentPage} of ${totalPages}`;
+
+      document.getElementById("prevBtn").disabled =
+        currentPage === 1;
+
+      document.getElementById("nextBtn").disabled =
+        currentPage === totalPages;
+
+    }
+
+    function nextPage() {
+
+      const totalPages =
+        Math.ceil(
+          tableData.length / rowsPerPage
+        );
+
+      if (currentPage < totalPages) {
+
+        currentPage++;
+
+        displayTable();
+
+      }
+
+    }
+
+    function prevPage() {
+
+      if (currentPage > 1) {
+
+        currentPage--;
+
+        displayTable();
+
+      }
+
+    }
+</script>
+
+
+Search.html
+
+
+<script>
+
+/* =====================================================
+       SEARCH
+    ===================================================== */
+
+    function searchTable() {
+
+      const value =
+        document.getElementById("searchInput")
+        .value
+        .toLowerCase();
+
+      const filtered =
+        tableData.filter(row =>
+
+          row.join(" ")
+          .toLowerCase()
+          .includes(value)
+
+        );
+
+      renderRows(filtered);
+
+    }
+</script>
+
+
+
+Stats.html
+
+
+<script>
+ /* =====================================================
+       STATS
+    ===================================================== */
+
+    function updateStats() {
+
+      const totalProducts =
+        tableData.length;
+
+      let totalQuantity = 0;
+
+      let totalPrice = 0;
+
+      tableData.forEach(row => {
+
+        totalQuantity +=
+          Number(row[2]) || 0;
+
+        totalPrice +=
+          Number(row[3]) || 0;
+
+      });
+
+      document.getElementById("totalProducts").innerText =
+        totalProducts;
+
+      document.getElementById("totalQuantity").innerText =
+        totalQuantity;
+
+      document.getElementById("totalPrice").innerText =
+        "$" + totalPrice.toFixed(2);
+
+    }
+    </script>
+   
+
+
+Styles.html
+
+
+
+
+<style>
+.container{width:100%}@media (min-width:640px){.container{max-width:640px}}@media (min-width:768px){.container{max-width:768px}}@media (min-width:1024px){.container{max-width:1024px}}@media (min-width:1280px){.container{max-width:1280px}}@media (min-width:1536px){.container{max-width:1536px}}.table{min-width:100%;text-align:left;font-size:.875rem;line-height:1.25rem}.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0}.not-sr-only,.sr-only{padding:0}.not-sr-only{position:static;width:auto;height:auto;margin:0;overflow:visible;clip:auto;white-space:normal}.pointer-events-none{pointer-events:none}.pointer-events-auto{pointer-events:auto}.visible{visibility:visible}.invisible{visibility:hidden}.collapse{visibility:collapse}.static{position:static}.fixed{position:fixed}.absolute{position:absolute}.relative{position:relative}.sticky{position:sticky}.-inset-1{inset:-.25rem}.inset-y-0{top:0;bottom:0}.end-1{inset-inline-end:.25rem}.left-0{left:0}.isolate{isolation:isolate}.isolation-auto{isolation:auto}.col-span-2{grid-column:span 2/span 2}.float-start{float:inline-start}.float-end{float:inline-end}.float-right{float:right}.float-left{float:left}.float-none{float:none}.clear-start{clear:inline-start}.clear-end{clear:inline-end}.clear-left{clear:left}.clear-right{clear:right}.clear-both{clear:both}.clear-none{clear:none}.mx-auto{margin-left:auto;margin-right:auto}.mb-2{margin-bottom:.5rem}.mb-6{margin-bottom:1.5rem}.mb-8{margin-bottom:2rem}.mt-1{margin-top:.25rem}.mt-2{margin-top:.5rem}.mt-6{margin-top:1.5rem}.box-border{box-sizing:border-box}.box-content{box-sizing:content-box}.line-clamp-none{overflow:visible;-webkit-box-orient:horizontal;-webkit-line-clamp:none}.block,.line-clamp-none{display:block}.inline-block{display:inline-block}.inline{display:inline}.flex{display:flex}.inline-flex{display:inline-flex}.table{display:table}.inline-table{display:inline-table}.table-caption{display:table-caption}.table-cell{display:table-cell}.table-column{display:table-column}.table-column-group{display:table-column-group}.table-footer-group{display:table-footer-group}.table-header-group{display:table-header-group}.table-row-group{display:table-row-group}.table-row{display:table-row}.flow-root{display:flow-root}.grid{display:grid}.inline-grid{display:inline-grid}.contents{display:contents}.list-item{display:list-item}.hidden{display:none}.h-5{height:1.25rem}.h-fit{height:-moz-fit-content;height:fit-content}.min-h-screen{min-height:100vh}.w-5{width:1.25rem}.w-full{width:100%}.max-w-7xl{max-width:80rem}.shrink{flex-shrink:1}.grow{flex-grow:1}.table-auto{table-layout:auto}.table-fixed{table-layout:fixed}.caption-top{caption-side:top}.caption-bottom{caption-side:bottom}.border-collapse{border-collapse:collapse}.border-separate{border-collapse:separate}.transform-cpu{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.transform-gpu{transform:translate3d(var(--tw-translate-x),var(--tw-translate-y),0) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.transform-none{transform:none}.touch-auto{touch-action:auto}.touch-none{touch-action:none}.touch-pan-x{--tw-pan-x:pan-x}.touch-pan-left,.touch-pan-x{touch-action:var(--tw-pan-x) var(--tw-pan-y) var(--tw-pinch-zoom)}.touch-pan-left{--tw-pan-x:pan-left}.touch-pan-right{--tw-pan-x:pan-right}.touch-pan-right,.touch-pan-y{touch-action:var(--tw-pan-x) var(--tw-pan-y) var(--tw-pinch-zoom)}.touch-pan-y{--tw-pan-y:pan-y}.touch-pan-up{--tw-pan-y:pan-up}.touch-pan-down,.touch-pan-up{touch-action:var(--tw-pan-x) var(--tw-pan-y) var(--tw-pinch-zoom)}.touch-pan-down{--tw-pan-y:pan-down}.touch-pinch-zoom{--tw-pinch-zoom:pinch-zoom;touch-action:var(--tw-pan-x) var(--tw-pan-y) var(--tw-pinch-zoom)}.touch-manipulation{touch-action:manipulation}.select-none{-webkit-user-select:none;-moz-user-select:none;user-select:none}.select-text{-webkit-user-select:text;-moz-user-select:text;user-select:text}.select-all{-webkit-user-select:all;-moz-user-select:all;user-select:all}.select-auto{-webkit-user-select:auto;-moz-user-select:auto;user-select:auto}.resize-none{resize:none}.resize-y{resize:vertical}.resize-x{resize:horizontal}.resize{resize:both}.snap-none{scroll-snap-type:none}.snap-x{scroll-snap-type:x var(--tw-scroll-snap-strictness)}.snap-y{scroll-snap-type:y var(--tw-scroll-snap-strictness)}.snap-both{scroll-snap-type:both var(--tw-scroll-snap-strictness)}.snap-mandatory{--tw-scroll-snap-strictness:mandatory}.snap-proximity{--tw-scroll-snap-strictness:proximity}.snap-start{scroll-snap-align:start}.snap-end{scroll-snap-align:end}.snap-center{scroll-snap-align:center}.snap-align-none{scroll-snap-align:none}.snap-normal{scroll-snap-stop:normal}.snap-always{scroll-snap-stop:always}.list-inside{list-style-position:inside}.list-outside{list-style-position:outside}.appearance-none{-webkit-appearance:none;-moz-appearance:none;appearance:none}.appearance-auto{-webkit-appearance:auto;-moz-appearance:auto;appearance:auto}.break-before-auto{-moz-column-break-before:auto;break-before:auto}.break-before-avoid{-moz-column-break-before:avoid;break-before:avoid}.break-before-all{-moz-column-break-before:all;break-before:all}.break-before-avoid-page{-moz-column-break-before:avoid;break-before:avoid-page}.break-before-page{-moz-column-break-before:page;break-before:page}.break-before-left{-moz-column-break-before:left;break-before:left}.break-before-right{-moz-column-break-before:right;break-before:right}.break-before-column{-moz-column-break-before:column;break-before:column}.break-inside-auto{-moz-column-break-inside:auto;break-inside:auto}.break-inside-avoid{-moz-column-break-inside:avoid;break-inside:avoid}.break-inside-avoid-page{break-inside:avoid-page}.break-inside-avoid-column{-moz-column-break-inside:avoid;break-inside:avoid-column}.break-after-auto{-moz-column-break-after:auto;break-after:auto}.break-after-avoid{-moz-column-break-after:avoid;break-after:avoid}.break-after-all{-moz-column-break-after:all;break-after:all}.break-after-avoid-page{-moz-column-break-after:avoid;break-after:avoid-page}.break-after-page{-moz-column-break-after:page;break-after:page}.break-after-left{-moz-column-break-after:left;break-after:left}.break-after-right{-moz-column-break-after:right;break-after:right}.break-after-column{-moz-column-break-after:column;break-after:column}.grid-flow-row{grid-auto-flow:row}.grid-flow-col{grid-auto-flow:column}.grid-flow-dense{grid-auto-flow:dense}.grid-flow-row-dense{grid-auto-flow:row dense}.grid-flow-col-dense{grid-auto-flow:column dense}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.flex-row{flex-direction:row}.flex-row-reverse{flex-direction:row-reverse}.flex-col{flex-direction:column}.flex-col-reverse{flex-direction:column-reverse}.flex-wrap{flex-wrap:wrap}.flex-wrap-reverse{flex-wrap:wrap-reverse}.flex-nowrap{flex-wrap:nowrap}.place-content-center{place-content:center}.place-content-start{place-content:start}.place-content-end{place-content:end}.place-content-between{place-content:space-between}.place-content-around{place-content:space-around}.place-content-evenly{place-content:space-evenly}.place-content-baseline{place-content:baseline}.place-content-stretch{place-content:stretch}.place-items-start{place-items:start}.place-items-end{place-items:end}.place-items-center{place-items:center}.place-items-baseline{place-items:baseline}.place-items-stretch{place-items:stretch}.content-normal{align-content:normal}.content-center{align-content:center}.content-start{align-content:flex-start}.content-end{align-content:flex-end}.content-between{align-content:space-between}.content-around{align-content:space-around}.content-evenly{align-content:space-evenly}.content-baseline{align-content:baseline}.content-stretch{align-content:stretch}.items-start{align-items:flex-start}.items-end{align-items:flex-end}.items-center{align-items:center}.items-baseline{align-items:baseline}.items-stretch{align-items:stretch}.justify-normal{justify-content:normal}.justify-start{justify-content:flex-start}.justify-end{justify-content:flex-end}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.justify-around{justify-content:space-around}.justify-evenly{justify-content:space-evenly}.justify-stretch{justify-content:stretch}.justify-items-start{justify-items:start}.justify-items-end{justify-items:end}.justify-items-center{justify-items:center}.justify-items-stretch{justify-items:stretch}.gap-2{gap:.5rem}.gap-3{gap:.75rem}.gap-4{gap:1rem}.gap-6{gap:1.5rem}.space-x-2>:not([hidden])~:not([hidden]){--tw-space-x-reverse:0;margin-right:calc(.5rem*var(--tw-space-x-reverse));margin-left:calc(.5rem*(1 - var(--tw-space-x-reverse)))}.space-y-5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.25rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.25rem*var(--tw-space-y-reverse))}.space-y-reverse>:not([hidden])~:not([hidden]){--tw-space-y-reverse:1}.space-x-reverse>:not([hidden])~:not([hidden]){--tw-space-x-reverse:1}.divide-x>:not([hidden])~:not([hidden]){--tw-divide-x-reverse:0;border-right-width:calc(1px*var(--tw-divide-x-reverse));border-left-width:calc(1px*(1 - var(--tw-divide-x-reverse)))}.divide-y>:not([hidden])~:not([hidden]){--tw-divide-y-reverse:0;border-top-width:calc(1px*(1 - var(--tw-divide-y-reverse)));border-bottom-width:calc(1px*var(--tw-divide-y-reverse))}.divide-y-reverse>:not([hidden])~:not([hidden]){--tw-divide-y-reverse:1}.divide-x-reverse>:not([hidden])~:not([hidden]){--tw-divide-x-reverse:1}.divide-solid>:not([hidden])~:not([hidden]){border-style:solid}.divide-dashed>:not([hidden])~:not([hidden]){border-style:dashed}.divide-dotted>:not([hidden])~:not([hidden]){border-style:dotted}.divide-double>:not([hidden])~:not([hidden]){border-style:double}.divide-none>:not([hidden])~:not([hidden]){border-style:none}.divide-slate-200>:not([hidden])~:not([hidden]){--tw-divide-opacity:1;border-color:rgb(226 232 240/var(--tw-divide-opacity,1))}.place-self-auto{place-self:auto}.place-self-start{place-self:start}.place-self-end{place-self:end}.place-self-center{place-self:center}.place-self-stretch{place-self:stretch}.self-auto{align-self:auto}.self-start{align-self:flex-start}.self-end{align-self:flex-end}.self-center{align-self:center}.self-stretch{align-self:stretch}.self-baseline{align-self:baseline}.justify-self-auto{justify-self:auto}.justify-self-start{justify-self:start}.justify-self-end{justify-self:end}.justify-self-center{justify-self:center}.justify-self-stretch{justify-self:stretch}.overflow-auto{overflow:auto}.overflow-hidden{overflow:hidden}.overflow-clip{overflow:clip}.overflow-visible{overflow:visible}.overflow-scroll{overflow:scroll}.overflow-x-auto{overflow-x:auto}.overflow-y-auto{overflow-y:auto}.overflow-x-hidden{overflow-x:hidden}.overflow-y-hidden{overflow-y:hidden}.overflow-x-clip{overflow-x:clip}.overflow-y-clip{overflow-y:clip}.overflow-x-visible{overflow-x:visible}.overflow-y-visible{overflow-y:visible}.overflow-x-scroll{overflow-x:scroll}.overflow-y-scroll{overflow-y:scroll}.overscroll-auto{overscroll-behavior:auto}.overscroll-contain{overscroll-behavior:contain}.overscroll-none{overscroll-behavior:none}.overscroll-y-auto{overscroll-behavior-y:auto}.overscroll-y-contain{overscroll-behavior-y:contain}.overscroll-y-none{overscroll-behavior-y:none}.overscroll-x-auto{overscroll-behavior-x:auto}.overscroll-x-contain{overscroll-behavior-x:contain}.overscroll-x-none{overscroll-behavior-x:none}.scroll-auto{scroll-behavior:auto}.scroll-smooth{scroll-behavior:smooth}.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.text-clip{text-overflow:clip}.hyphens-none{hyphens:none}.hyphens-manual{hyphens:manual}.hyphens-auto{hyphens:auto}.whitespace-normal{white-space:normal}.whitespace-nowrap{white-space:nowrap}.whitespace-pre{white-space:pre}.whitespace-pre-line{white-space:pre-line}.whitespace-pre-wrap{white-space:pre-wrap}.whitespace-break-spaces{white-space:break-spaces}.text-wrap{text-wrap:wrap}.text-nowrap{text-wrap:nowrap}.text-balance{text-wrap:balance}.text-pretty{text-wrap:pretty}.break-normal{overflow-wrap:normal;word-break:normal}.break-words{overflow-wrap:break-word}.break-all{word-break:break-all}.break-keep{word-break:keep-all}.rounded{border-radius:.25rem}.rounded-2xl{border-radius:1rem}.rounded-3xl{border-radius:1.5rem}.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}.rounded-b{border-bottom-right-radius:.25rem;border-bottom-left-radius:.25rem}.rounded-e{border-start-end-radius:.25rem;border-end-end-radius:.25rem}.rounded-l{border-top-left-radius:.25rem;border-bottom-left-radius:.25rem}.rounded-r{border-top-right-radius:.25rem;border-bottom-right-radius:.25rem}.rounded-s{border-start-start-radius:.25rem;border-end-start-radius:.25rem}.rounded-t{border-top-left-radius:.25rem;border-top-right-radius:.25rem}.rounded-bl{border-bottom-left-radius:.25rem}.rounded-br{border-bottom-right-radius:.25rem}.rounded-ee{border-end-end-radius:.25rem}.rounded-es{border-end-start-radius:.25rem}.rounded-se{border-start-end-radius:.25rem}.rounded-ss{border-start-start-radius:.25rem}.rounded-tl{border-top-left-radius:.25rem}.rounded-tr{border-top-right-radius:.25rem}.border{border-width:1px}.border-x{border-left-width:1px;border-right-width:1px}.border-y{border-top-width:1px;border-bottom-width:1px}.border-e{border-inline-end-width:1px}.border-l{border-left-width:1px}.border-r{border-right-width:1px}.border-s{border-inline-start-width:1px}.border-t{border-top-width:1px}.border-solid{border-style:solid}.border-dashed{border-style:dashed}.border-dotted{border-style:dotted}.border-double{border-style:double}.border-hidden{border-style:hidden}.border-none{border-style:none}.border-blue-100{border-color:rgb(219 234 254/var(--tw-border-opacity,1))}.border-blue-100,.border-green-100{--tw-border-opacity:1}.border-green-100{border-color:rgb(220 252 231/var(--tw-border-opacity,1))}.border-green-500{--tw-border-opacity:1;border-color:rgb(34 197 94/var(--tw-border-opacity,1))}.border-orange-100{border-color:rgb(255 237 213/var(--tw-border-opacity,1))}.border-orange-100,.border-red-500{--tw-border-opacity:1}.border-red-500{border-color:rgb(239 68 68/var(--tw-border-opacity,1))}.border-slate-200{--tw-border-opacity:1;border-color:rgb(226 232 240/var(--tw-border-opacity,1))}.border-slate-300{--tw-border-opacity:1;border-color:rgb(203 213 225/var(--tw-border-opacity,1))}.bg-blue-50{background-color:rgb(239 246 255/var(--tw-bg-opacity,1))}.bg-blue-50,.bg-blue-500{--tw-bg-opacity:1}.bg-blue-500{background-color:rgb(59 130 246/var(--tw-bg-opacity,1))}.bg-blue-600{background-color:rgb(37 99 235/var(--tw-bg-opacity,1))}.bg-blue-600,.bg-green-50{--tw-bg-opacity:1}.bg-green-50{background-color:rgb(240 253 244/var(--tw-bg-opacity,1))}.bg-green-600{background-color:rgb(22 163 74/var(--tw-bg-opacity,1))}.bg-green-600,.bg-orange-50{--tw-bg-opacity:1}.bg-orange-50{background-color:rgb(255 247 237/var(--tw-bg-opacity,1))}.bg-red-500{background-color:rgb(239 68 68/var(--tw-bg-opacity,1))}.bg-red-500,.bg-red-600{--tw-bg-opacity:1}.bg-red-600{background-color:rgb(220 38 38/var(--tw-bg-opacity,1))}.bg-slate-100{background-color:rgb(241 245 249/var(--tw-bg-opacity,1))}.bg-slate-100,.bg-slate-200{--tw-bg-opacity:1}.bg-slate-200{background-color:rgb(226 232 240/var(--tw-bg-opacity,1))}.bg-slate-50{background-color:rgb(248 250 252/var(--tw-bg-opacity,1))}.bg-slate-50,.bg-slate-700{--tw-bg-opacity:1}.bg-slate-700{background-color:rgb(51 65 85/var(--tw-bg-opacity,1))}.bg-slate-800{background-color:rgb(30 41 59/var(--tw-bg-opacity,1))}.bg-slate-800,.bg-white{--tw-bg-opacity:1}.bg-white{background-color:rgb(255 255 255/var(--tw-bg-opacity,1))}.decoration-slice{-webkit-box-decoration-break:slice;box-decoration-break:slice}.decoration-clone{-webkit-box-decoration-break:clone;box-decoration-break:clone}.box-decoration-slice{-webkit-box-decoration-break:slice;box-decoration-break:slice}.box-decoration-clone{-webkit-box-decoration-break:clone;box-decoration-break:clone}.bg-fixed{background-attachment:fixed}.bg-local{background-attachment:local}.bg-scroll{background-attachment:scroll}.bg-clip-border{background-clip:border-box}.bg-clip-padding{background-clip:padding-box}.bg-clip-content{background-clip:content-box}.bg-clip-text{-webkit-background-clip:text;background-clip:text}.bg-repeat{background-repeat:repeat}.bg-no-repeat{background-repeat:no-repeat}.bg-repeat-x{background-repeat:repeat-x}.bg-repeat-y{background-repeat:repeat-y}.bg-repeat-round{background-repeat:round}.bg-repeat-space{background-repeat:space}.bg-origin-border{background-origin:border-box}.bg-origin-padding{background-origin:padding-box}.bg-origin-content{background-origin:content-box}.object-contain{-o-object-fit:contain;object-fit:contain}.object-cover{-o-object-fit:cover;object-fit:cover}.object-fill{-o-object-fit:fill;object-fit:fill}.object-none{-o-object-fit:none;object-fit:none}.object-scale-down{-o-object-fit:scale-down;object-fit:scale-down}.p-3{padding:.75rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-6{padding:1.5rem}.px-1{padding-left:.25rem;padding-right:.25rem}.px-4{padding-left:1rem;padding-right:1rem}.px-5{padding-left:1.25rem;padding-right:1.25rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}.pl-12{padding-left:3rem}.pl-4{padding-left:1rem}.pr-4{padding-right:1rem}.text-left{text-align:left}.text-center{text-align:center}.text-right{text-align:right}.text-justify{text-align:justify}.text-start{text-align:start}.text-end{text-align:end}.align-baseline{vertical-align:baseline}.align-top{vertical-align:top}.align-middle{vertical-align:middle}.align-bottom{vertical-align:bottom}.align-text-top{vertical-align:text-top}.align-text-bottom{vertical-align:text-bottom}.align-sub{vertical-align:sub}.align-super{vertical-align:super}.text-2xl{font-size:1.5rem;line-height:2rem}.text-3xl{font-size:1.875rem;line-height:2.25rem}.text-4xl{font-size:2.25rem;line-height:2.5rem}.text-sm{font-size:.875rem;line-height:1.25rem}.font-bold{font-weight:700}.font-medium{font-weight:500}.font-semibold{font-weight:600}.uppercase{text-transform:uppercase}.lowercase{text-transform:lowercase}.capitalize{text-transform:capitalize}.normal-case{text-transform:none}.italic{font-style:italic}.not-italic{font-style:normal}.normal-nums{font-variant-numeric:normal}.ordinal{--tw-ordinal:ordinal}.ordinal,.slashed-zero{font-variant-numeric:var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction)}.slashed-zero{--tw-slashed-zero:slashed-zero}.lining-nums{--tw-numeric-figure:lining-nums}.lining-nums,.oldstyle-nums{font-variant-numeric:var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction)}.oldstyle-nums{--tw-numeric-figure:oldstyle-nums}.proportional-nums{--tw-numeric-spacing:proportional-nums}.proportional-nums,.tabular-nums{font-variant-numeric:var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction)}.tabular-nums{--tw-numeric-spacing:tabular-nums}.diagonal-fractions{--tw-numeric-fraction:diagonal-fractions}.diagonal-fractions,.stacked-fractions{font-variant-numeric:var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction)}.stacked-fractions{--tw-numeric-fraction:stacked-fractions}.text-blue-500{color:rgb(59 130 246/var(--tw-text-opacity,1))}.text-blue-500,.text-blue-600{--tw-text-opacity:1}.text-blue-600{color:rgb(37 99 235/var(--tw-text-opacity,1))}.text-blue-800{color:rgb(30 64 175/var(--tw-text-opacity,1))}.text-blue-800,.text-green-600{--tw-text-opacity:1}.text-green-600{color:rgb(22 163 74/var(--tw-text-opacity,1))}.text-green-800{color:rgb(22 101 52/var(--tw-text-opacity,1))}.text-green-800,.text-orange-600{--tw-text-opacity:1}.text-orange-600{color:rgb(234 88 12/var(--tw-text-opacity,1))}.text-orange-800{color:rgb(154 52 18/var(--tw-text-opacity,1))}.text-orange-800,.text-red-600{--tw-text-opacity:1}.text-red-600{color:rgb(220 38 38/var(--tw-text-opacity,1))}.text-slate-400{color:rgb(148 163 184/var(--tw-text-opacity,1))}.text-slate-400,.text-slate-500{--tw-text-opacity:1}.text-slate-500{color:rgb(100 116 139/var(--tw-text-opacity,1))}.text-slate-700{color:rgb(51 65 85/var(--tw-text-opacity,1))}.text-slate-700,.text-slate-800{--tw-text-opacity:1}.text-slate-800{color:rgb(30 41 59/var(--tw-text-opacity,1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.underline{text-decoration-line:underline}.overline{text-decoration-line:overline}.line-through{text-decoration-line:line-through}.no-underline{text-decoration-line:none}.decoration-solid{text-decoration-style:solid}.decoration-double{text-decoration-style:double}.decoration-dotted{text-decoration-style:dotted}.decoration-dashed{text-decoration-style:dashed}.decoration-wavy{text-decoration-style:wavy}.antialiased{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.subpixel-antialiased{-webkit-font-smoothing:auto;-moz-osx-font-smoothing:auto}.bg-blend-normal{background-blend-mode:normal}.bg-blend-multiply{background-blend-mode:multiply}.bg-blend-screen{background-blend-mode:screen}.bg-blend-overlay{background-blend-mode:overlay}.bg-blend-darken{background-blend-mode:darken}.bg-blend-lighten{background-blend-mode:lighten}.bg-blend-color-dodge{background-blend-mode:color-dodge}.bg-blend-color-burn{background-blend-mode:color-burn}.bg-blend-hard-light{background-blend-mode:hard-light}.bg-blend-soft-light{background-blend-mode:soft-light}.bg-blend-difference{background-blend-mode:difference}.bg-blend-exclusion{background-blend-mode:exclusion}.bg-blend-hue{background-blend-mode:hue}.bg-blend-saturation{background-blend-mode:saturation}.bg-blend-color{background-blend-mode:color}.bg-blend-luminosity{background-blend-mode:luminosity}.mix-blend-normal{mix-blend-mode:normal}.mix-blend-multiply{mix-blend-mode:multiply}.mix-blend-screen{mix-blend-mode:screen}.mix-blend-overlay{mix-blend-mode:overlay}.mix-blend-darken{mix-blend-mode:darken}.mix-blend-lighten{mix-blend-mode:lighten}.mix-blend-color-dodge{mix-blend-mode:color-dodge}.mix-blend-color-burn{mix-blend-mode:color-burn}.mix-blend-hard-light{mix-blend-mode:hard-light}.mix-blend-soft-light{mix-blend-mode:soft-light}.mix-blend-difference{mix-blend-mode:difference}.mix-blend-exclusion{mix-blend-mode:exclusion}.mix-blend-hue{mix-blend-mode:hue}.mix-blend-saturation{mix-blend-mode:saturation}.mix-blend-color{mix-blend-mode:color}.mix-blend-luminosity{mix-blend-mode:luminosity}.mix-blend-plus-darker{mix-blend-mode:plus-darker}.mix-blend-plus-lighter{mix-blend-mode:plus-lighter}.shadow{--tw-shadow:0 1px 3px 0 rgba(0,0,0,.1),0 1px 2px -1px rgba(0,0,0,.1);--tw-shadow-colored:0 1px 3px 0 var(--tw-shadow-color),0 1px 2px -1px var(--tw-shadow-color)}.shadow,.shadow-lg{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color),0 4px 6px -4px var(--tw-shadow-color)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color),0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.outline-none{outline:2px solid transparent;outline-offset:2px}.outline{outline-style:solid}.outline-dashed{outline-style:dashed}.outline-dotted{outline-style:dotted}.outline-double{outline-style:double}.ring{--tw-ring-offset-shadow:var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);--tw-ring-shadow:var(--tw-ring-inset) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color);box-shadow:var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow,0 0 #0000)}.ring-inset{--tw-ring-inset:inset}.blur{--tw-blur:blur(8px)}.blur,.drop-shadow{filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.drop-shadow{--tw-drop-shadow:drop-shadow(0 1px 2px rgba(0,0,0,.1)) drop-shadow(0 1px 1px rgba(0,0,0,.06))}.grayscale{--tw-grayscale:grayscale(100%)}.grayscale,.invert{filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.invert{--tw-invert:invert(100%)}.sepia{--tw-sepia:sepia(100%)}.filter,.sepia{filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.filter-none{filter:none}.backdrop-blur{--tw-backdrop-blur:blur(8px)}.backdrop-blur,.backdrop-grayscale{backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.backdrop-grayscale{--tw-backdrop-grayscale:grayscale(100%)}.backdrop-invert{--tw-backdrop-invert:invert(100%)}.backdrop-invert,.backdrop-sepia{backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.backdrop-sepia{--tw-backdrop-sepia:sepia(100%)}.backdrop-filter{backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.backdrop-filter-none{backdrop-filter:none}.transition{transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.ease-in{transition-timing-function:cubic-bezier(.4,0,1,1)}.ease-in-out{transition-timing-function:cubic-bezier(.4,0,.2,1)}.ease-out{transition-timing-function:cubic-bezier(0,0,.2,1)}.contain-none{contain:none}.contain-content{contain:content}.contain-strict{contain:strict}.contain-size{--tw-contain-size:size}.contain-inline-size,.contain-size{contain:var(--tw-contain-size) var(--tw-contain-layout) var(--tw-contain-paint) var(--tw-contain-style)}.contain-inline-size{--tw-contain-size:inline-size}.contain-layout{--tw-contain-layout:layout}.contain-layout,.contain-paint{contain:var(--tw-contain-size) var(--tw-contain-layout) var(--tw-contain-paint) var(--tw-contain-style)}.contain-paint{--tw-contain-paint:paint}.contain-style{--tw-contain-style:style;contain:var(--tw-contain-size) var(--tw-contain-layout) var(--tw-contain-paint) var(--tw-contain-style)}.forced-color-adjust-auto{forced-color-adjust:auto}.forced-color-adjust-none{forced-color-adjust:none}.hover\:bg-blue-600:hover{--tw-bg-opacity:1;background-color:rgb(37 99 235/var(--tw-bg-opacity,1))}.hover\:bg-blue-700:hover{--tw-bg-opacity:1;background-color:rgb(29 78 216/var(--tw-bg-opacity,1))}.hover\:bg-green-700:hover{--tw-bg-opacity:1;background-color:rgb(21 128 61/var(--tw-bg-opacity,1))}.hover\:bg-red-600:hover{--tw-bg-opacity:1;background-color:rgb(220 38 38/var(--tw-bg-opacity,1))}.hover\:bg-red-700:hover{--tw-bg-opacity:1;background-color:rgb(185 28 28/var(--tw-bg-opacity,1))}.hover\:bg-slate-50:hover{--tw-bg-opacity:1;background-color:rgb(248 250 252/var(--tw-bg-opacity,1))}.hover\:bg-slate-800:hover{--tw-bg-opacity:1;background-color:rgb(30 41 59/var(--tw-bg-opacity,1))}.focus\:border-blue-500:focus{--tw-border-opacity:1;border-color:rgb(59 130 246/var(--tw-border-opacity,1))}.focus\:ring-4:focus{--tw-ring-offset-shadow:var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);--tw-ring-shadow:var(--tw-ring-inset) 0 0 0 calc(4px + var(--tw-ring-offset-width)) var(--tw-ring-color);box-shadow:var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow,0 0 #0000)}.focus\:ring-blue-200:focus{--tw-ring-opacity:1;--tw-ring-color:rgb(191 219 254/var(--tw-ring-opacity,1))}.disabled\:cursor-not-allowed:disabled{cursor:not-allowed}.disabled\:opacity-50:disabled{opacity:.5}@media (min-width:768px){.md\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.md\:flex-row{flex-direction:row}.md\:items-center{align-items:center}.md\:justify-between{justify-content:space-between}}@media (min-width:1024px){.lg\:col-span-2{grid-column:span 2/span 2}.lg\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
+
+
+Table.html
+
+
+<script>
+/* =====================================================
+       DISPLAY TABLE
+    ===================================================== */
+
+    function displayTable() {
+
+      const start =
+        (currentPage - 1) * rowsPerPage;
+
+      const end =
+        start + rowsPerPage;
+
+      const pageItems =
+        tableData.slice(start, end);
+
+      renderRows(pageItems);
+
+      updatePagination();
+
+    }
+
+    /* =====================================================
+       RENDER ROWS
+    ===================================================== */
+
+    function renderRows(rows) {
+
+      const tbody =
+        document.getElementById("tableBody");
+
+      tbody.innerHTML = "";
+
+      if (rows.length === 0) {
+
+        tbody.innerHTML = `
+
+          <tr>
+
+            <td
+              colspan="5"
+              class="text-center p-6 text-slate-500"
+            >
+              No Products Found
+            </td>
+
+          </tr>
+
+        `;
+
+        return;
+
+      }
+
+      rows.forEach(row => {
+
+        tbody.innerHTML += `
+
+          <tr class="hover:bg-slate-50 transition">
+
+            <td class="p-4 font-medium">
+              ${row[0]}
+            </td>
+
+            <td class="p-4">
+              ${row[1]}
+            </td>
+
+            <td class="p-4">
+              ${row[2]}
+            </td>
+
+            <td class="p-4 font-semibold text-green-600">
+              $${row[3]}
+            </td>
+
+            <td class="p-4">
+
+              <div class="flex gap-2">
+
+                <button
+                  type="button"
+
+                  onclick="editData(
+                    '${row[0]}',
+                    '${row[1]}',
+                    '${row[2]}',
+                    '${row[3]}'
+                  )"
+
+                  class="
+                    bg-blue-500
+                    hover:bg-blue-600
+                    text-white
+                    px-4
+                    py-2
+                    rounded-lg
+                    transition
+                  "
+                >
+                  Edit
+                </button>
+
+                <button
+                  type="button"
+
+                  onclick="deleteData('${row[0]}')"
+
+                  class="
+                    bg-red-500
+                    hover:bg-red-600
+                    text-white
+                    px-4
+                    py-2
+                    rounded-lg
+                    transition
+                  "
+                >
+                  Delete
+                </button>
+
+              </div>
+
+            </td>
+
+          </tr>
+
+        `;
+
+      });
+
+    }
+
+    /* =====================================================
+       EDIT
+    ===================================================== */
+
+    function editData(
+      id,
+      name,
+      quantity,
+      price
+    ) {
+
+      editRowId = id;
+
+      document.getElementById("name").value =
+        name;
+
+      document.getElementById("quantity").value =
+        quantity;
+
+      document.getElementById("price").value =
+        price;
+
+      document.getElementById("msg").innerText =
+        "Editing Product: " + id;
+
+    }
+
+    /* =====================================================
+       DELETE
+    ===================================================== */
+
+    function deleteData(id) {
+
+      const confirmDelete =
+        confirm("Delete this product?");
+
+      if (!confirmDelete) return;
+
+      google.script.run
+
+        .withSuccessHandler(function(response) {
+
+          document.getElementById("msg").innerText =
+            response;
+
+          loadData();
+
+        })
+
+        .deleteProduct(id);
+
+    }
+    </script>
+
+
+
+validation.html
+
+
+
+<script>
+/* =====================================================
+   VALIDATOR
+===================================================== */
+
+const FormValidator = {
+
+  validateField(fieldId) {
+
+    const input =
+      document.getElementById(fieldId);
+
+    const error =
+      document.getElementById(fieldId + "-error");
+
+    const value =
+      input.value.trim();
+
+    let message = "";
+
+    /* =========================
+       PRODUCT NAME
+    ========================= */
+
+    if (fieldId === "name") {
+
+      if (!value) {
+
+        message =
+          "Product name required";
+
+      }
+
+      else if (value.length < 3) {
+
+        message =
+          "Minimum 3 characters required";
+
+      }
+
+    }
+
+    /* =========================
+       QUANTITY
+    ========================= */
+
+    if (fieldId === "quantity") {
+
+      if (
+        !value
+        ||
+        isNaN(value)
+        ||
+        Number(value) <= 0
+      ) {
+
+        message =
+          "Quantity must be greater than 0";
+
+      }
+
+    }
+
+    /* =========================
+       PRICE
+    ========================= */
+
+    if (fieldId === "price") {
+
+      if (
+        !value
+        ||
+        isNaN(value)
+        ||
+        Number(value) <= 0
+      ) {
+
+        message =
+          "Price must be greater than 0";
+
+      }
+
+    }
+
+    /* =========================
+       SHOW ERROR
+    ========================= */
+
+    if (message) {
+
+      error.innerText =
+        message;
+
+      input.classList.add(
+        "border-red-500"
+      );
+
+      input.classList.remove(
+        "border-green-500"
+      );
+
+      return false;
+
+    }
+
+    /* =========================
+       SUCCESS
+    ========================= */
+
+    error.innerText = "";
+
+    input.classList.remove(
+      "border-red-500"
+    );
+
+    input.classList.add(
+      "border-green-500"
+    );
+
+    return true;
+
+  },
+
+  validateForm() {
+
+    const fields = [
+      "name",
+      "quantity",
+      "price"
+    ];
+
+    let isValid = true;
+
+    fields.forEach(field => {
+
+      const valid =
+        this.validateField(field);
+
+      if (!valid) {
+
+        isValid = false;
+
+      }
+
+    });
+
+    return isValid;
+
+  }
+
+};
+</script>
+
