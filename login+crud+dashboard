@@ -1,6 +1,6 @@
 code.gs
 
-const sheet_ID = "1drdWM_BdmvicKtalFtqrmd6xs_ISBsNRV_lhkzq7i_4";
+const sheet_ID = "enter your sheet_id";
 
 function getDataSheet() {
 
@@ -333,7 +333,7 @@ function uploadFileToDrive(file) {
 
 
 
-    const folderId = "1DAKkkO-692cVZaQ8UzB6PD-JPXchikta";
+    const folderId = "enter your folder_id";
 
     const folder = DriveApp.getFolderById(folderId);
 
